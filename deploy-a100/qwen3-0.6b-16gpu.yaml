@@ -1,0 +1,150 @@
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  name: qwen3-0-6b
+  namespace: dynamo-system
+spec:
+  components:
+  - name: Frontend
+    type: frontend
+    runtimeVersionOverride: 1.6.0
+    replicas: 1
+    podTemplate:
+      metadata:
+        labels:
+          app: qwen3-frontend
+          app.kubernetes.io/instance: qwen3-0-6b
+      spec:
+        containers:
+        - name: main
+          image: nvcr.io/nvidia/ai-dynamo/dynamo-frontend:1.6.0
+          imagePullPolicy: IfNotPresent
+          env:
+          - name: DYN_ROUTER_MODE
+            value: kv
+          - name: HF_HUB_OFFLINE
+            value: '1'
+          - name: TRANSFORMERS_OFFLINE
+            value: '1'
+          resources:
+            requests:
+              cpu: '2'
+              memory: 4Gi
+            limits:
+              memory: 16Gi
+          volumeMounts:
+          - name: model
+            mountPath: /models/qwen3-0.6B
+            readOnly: true
+        volumes:
+        - name: model
+          hostPath:
+            path: /data0/models/qwen3-0.6B
+            type: Directory
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                  - a100-1
+                  - a100-2
+  - name: Worker
+    type: worker
+    runtimeVersionOverride: 1.6.0
+    replicas: 16
+    sharedMemorySize: 8Gi
+    podTemplate:
+      metadata:
+        labels:
+          app: qwen3-worker
+          app.kubernetes.io/instance: qwen3-0-6b
+      spec:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                  - a100-1
+                  - a100-2
+        topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: qwen3-worker
+              app.kubernetes.io/instance: qwen3-0-6b
+        containers:
+        - name: main
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.6.0
+          imagePullPolicy: IfNotPresent
+          command:
+          - python3
+          - -m
+          - dynamo.sglang
+          args:
+          - --model-path
+          - /models/qwen3-0.6B
+          - --served-model-name
+          - Qwen/Qwen3-0.6B
+          - --tp-size
+          - '1'
+          - --page-size
+          - '16'
+          - --attention-backend
+          - triton
+          - --mem-fraction-static
+          - '0.80'
+          - --max-running-requests
+          - '64'
+          - --cuda-graph-max-bs-decode
+          - '64'
+          - --kv-events-config
+          - '{"publisher":"zmq","topic":"kv-events","endpoint":"tcp://*:5557"}'
+          env:
+          - name: HF_HUB_OFFLINE
+            value: '1'
+          - name: TRANSFORMERS_OFFLINE
+            value: '1'
+          - name: OMP_NUM_THREADS
+            value: '4'
+          resources:
+            requests:
+              cpu: '4'
+              memory: 16Gi
+              ephemeral-storage: 2Gi
+              nvidia.com/gpu: '1'
+            limits:
+              memory: 64Gi
+              nvidia.com/gpu: '1'
+          volumeMounts:
+          - name: model
+            mountPath: /models/qwen3-0.6B
+            readOnly: true
+        volumes:
+        - name: model
+          hostPath:
+            path: /data0/models/qwen3-0.6B
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-api
+  namespace: dynamo-system
+spec:
+  type: NodePort
+  selector:
+    app: qwen3-frontend
+    app.kubernetes.io/instance: qwen3-0-6b
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    nodePort: 30080

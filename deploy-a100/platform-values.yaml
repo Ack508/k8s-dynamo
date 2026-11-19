@@ -1,0 +1,17 @@
+# Dynamo 1.6.0：Kubernetes 服务发现，TCP 请求面，ZMQ 事件面。
+global:
+  etcd:
+    install: false
+  nats:
+    install: false
+  grove:
+    install: false
+    enabled: false
+  kai-scheduler:
+    install: false
+    enabled: false
+  snapshot:
+    install: false
+dynamo-operator:
+  discoveryBackend: kubernetes
+  upgradeCRD: true
