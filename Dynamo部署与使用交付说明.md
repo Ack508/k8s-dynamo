@@ -1,9 +1,5 @@
 # 两台 A100 的 Dynamo 部署与使用交付说明
 
-本文记录 2026-11-19 在两台 A100 上完成的 Kubernetes + Dynamo **1.6.0** 部署，以及接手后的启停、推理和排查方法。
-
-原部署验收后，模型服务按要求停止。当时保留了 Kubernetes、Dynamo Operator、CRD、镜像和本地模型。接手时可用 `bash deploy.sh status` 和 `kubectl get nodes -o wide` 核对现场状态。
-
 ## 1. 我们的部署过程
 
 1. **把两台机器加入同一个 K8s 集群。** 两台都配置了 containerd、kubelet、NVIDIA Container Toolkit 和 NVIDIA Device Plugin。a100_1 通过 kubeadm 初始化控制平面，a100_2 加入为工作节点。Cilium 使用 VXLAN，两台都调度 GPU Worker。验收时两个节点各报告 8 张可分配 GPU。
@@ -198,22 +194,3 @@ nvidia-smi
 - 启动早期健康检查返回 503：查看权重加载、CUDA Graph 捕获和模型注册进度；不能只以容器 Running 判断推理已就绪。
 - DGD 字段错误：本版本 `spec.components` 是列表；`runtimeVersionOverride` 在**各组件**里，不在 DGD 的顶层 `spec`。使用 `validate` 先让已安装的 CRD/webhook 校验。
 - `v1/models` 正常但推理失败：继续查看对应 Worker 日志，确认模型加载、GPU 分配、跨节点 Pod 通信和 Worker 注册状态。
-
-## 一句话让 Agent 部署
-
-复制仓库首页的提示词，把模型位置换成实际目录。Agent 用已有的目标机器访问权限，从裸机准备或现有集群检查开始，部署后返回 API 地址、模型名和验收结果。[README 的部署提示词](README.md#一句话部署)
-
-## 验证记录和参考
-
-并发验收使用了不同的随机输入前缀，测试期间 KV 命中为 0。每个 Worker 处理 2 个请求是该次测试的结果，实际分发取决于请求到达顺序、KV 命中和 Worker 负载。
-
-原部署的实际推理验收见第 1 节。之后封装脚本时，另行验证了参数、Helm 渲染、两节点模型文件检查、Kubernetes 服务端 dry run 和停止操作。迁移到新环境时，以该环境执行 `bash deploy.sh test` 的实际结果为准。
-
-参考：
-
-- 原 `Dynamo 部署教程.md`：使用其中 DGD 手动部署、P/D 共置的路线；统一修正示例中的 1.5.0 镜像为 1.6.0，PVC/HF 下载替换为本地只读 hostPath。
-- [Dynamo v1.6.0 官方 SGLang 聚合部署与 KV Router 示例](https://github.com/ai-dynamo/dynamo/blob/v1.6.0/examples/backends/sglang/deploy/agg_router.yaml)
-- [Dynamo v1.6.0 Platform Helm values](https://github.com/ai-dynamo/dynamo/blob/v1.6.0/deploy/helm/charts/platform/values.yaml)
-- [Dynamo Kubernetes Quickstart](https://docs.nvidia.com/dynamo/v1.6.1/kubernetes/getting-started/quickstart)；平台安装命令同时以已下载的 1.6.0 chart 实物核对。
-- [SGLang 显存预算、CUDA Graph 和并发调参说明](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/hyperparameter_tuning.mdx)
-- [Kubernetes NodePort Service](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport)
