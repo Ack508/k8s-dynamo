@@ -19,7 +19,8 @@ Usage: bash deploy.sh COMMAND
   help      Print this help. Running without a command prints help too.
 
 Edit config.env, or override one setting, e.g. WORKER_REPLICAS=2 bash deploy.sh start.
-Run on a100_1 with an administrative kubeconfig. stop keeps the platform and files.
+Run on the Kubernetes control plane or a management host with an administrative kubeconfig.
+NODE_NAMES and NODE_IPS refer to GPU workload nodes. stop keeps the platform and files.
 EOF
 }
 
